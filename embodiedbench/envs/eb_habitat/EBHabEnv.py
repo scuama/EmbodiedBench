@@ -109,7 +109,7 @@ def transform_action_to_natural_language(skill_set):
 
 
 class EBHabEnv(gym.Env):
-    def __init__(self, eval_set='train', exp_name='', down_sample_ratio=1.0, start_epi_index=0, resolution=500, recording=False):
+    def __init__(self, eval_set='long_horizon', exp_name='', down_sample_ratio=1.0, start_epi_index=0, resolution=500, recording=False):
         """
         Initialize the HabitatRearrange environment.
         """
@@ -329,11 +329,13 @@ if __name__ == '__main__':
     Example usage of the EBHabEnv environment.
     Demonstrates environment interaction with random actions.
     """
-    env = EBHabEnv(eval_set='base')
+    env = EBHabEnv(eval_set='long_horizon', start_epi_index=0)
     obs = env.reset()
     print([(i, name) for i, name in enumerate(env.language_skill_set)])
+    print('Instruction: {}'.format(env.episode_language_instruction))
+    print('log_path: {}'.format(env.log_path))
+    env.save_image(obs)
     for _ in range(30):
-        env.save_image(obs)
         action = int(input('action id: ')) #env.action_space.sample()
         if action in env.language_skill_set:
             action = env.language_skill_set.index(action)

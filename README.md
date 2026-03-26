@@ -156,6 +156,8 @@ python -m embodiedbench.envs.eb_alfred.EBAlfEnv
 
 ## EB-Habitat
 
+> Update: the default long-horizon EB-Habitat dataset has been updated in place. Please use `embodiedbench/envs/eb_habitat/datasets/long_horizon.pickle`. The previous version is preserved as `embodiedbench/envs/eb_habitat/datasets/long_horizon_old.pickle`. This fix is related to [Issue #28](https://github.com/EmbodiedBench/EmbodiedBench/issues/28) and [Issue #39](https://github.com/EmbodiedBench/EmbodiedBench/issues/39).
+
 - Install [Habitat-Sim](https://github.com/facebookresearch/habitat-sim) and [Habitat-Lab](https://github.com/facebookresearch/habitat-lab) via
 
  ```bash
