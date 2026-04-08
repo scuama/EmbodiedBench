@@ -99,7 +99,7 @@ class EBAlfEnv(gym.Env):
         Initialize the AI2THOR environment.
         """
         super().__init__()
-        self.data_path = ALFRED_SPLIT_PATH
+        self.data_path = os.environ.get('ALFRED_SPLIT_PATH', ALFRED_SPLIT_PATH)
         self.reward_config_path = ALFRED_REWARD_PATH
         self.resolution = resolution
         self.env = ThorConnector(x_display=X_DISPLAY, player_screen_height=resolution, player_screen_width=resolution)
@@ -436,4 +436,3 @@ if __name__ == "__main__":
         if done:
             break
     env.close()
-

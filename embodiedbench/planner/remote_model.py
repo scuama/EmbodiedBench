@@ -51,6 +51,8 @@ class RemoteModel:
                     api_key=os.getenv("DASHSCOPE_API_KEY"),
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                 )
+            elif "Qwen3-VL" in self.model_name:
+                self.model = OpenAI(base_url = remote_url)
             elif "Qwen2-VL" in self.model_name:
                 self.model = OpenAI(base_url = remote_url)
             elif "Qwen2.5-VL" in self.model_name:
@@ -83,6 +85,8 @@ class RemoteModel:
                 return self._call_gpt(message_history)
             elif 'qwen' in self.model_name:
                 return self._call_gpt(message_history)
+            elif "Qwen3-VL" in self.model_name:
+                return self._call_qwen7b(message_history)
             elif "Qwen2-VL-7B-Instruct" in self.model_name:
                 return self._call_qwen7b(message_history)
             elif "Qwen2.5-VL-7B-Instruct" in self.model_name:
@@ -105,6 +109,16 @@ class RemoteModel:
             #     return self._call_intern38b(message_history)
             else:
                 raise ValueError(f"Unsupported model name: {self.model_name}")
+
+    def _completion_token_kwargs(self):
+        if self.model_name.startswith("gpt-5"):
+            return dict(max_completion_tokens=max_completion_tokens)
+        return dict(max_tokens=max_completion_tokens)
+
+    def _temperature_kwargs(self):
+        if self.model_name.startswith("gpt-5"):
+            return {}
+        return dict(temperature=temperature)
 
     def _call_local(self, message_history: list):
         if self.task_type == 'manip':
@@ -191,8 +205,8 @@ class RemoteModel:
             model=self.model_name,
             messages=message_history,
             response_format=response_format,
-            temperature=temperature,
-            max_tokens=max_completion_tokens
+            **self._temperature_kwargs(),
+            **self._completion_token_kwargs()
         )
         out = response.choices[0].message.content
 
@@ -367,4 +381,3 @@ if __name__ == "__main__":
 
     response = model.respond(messages)
     print(response)
-
