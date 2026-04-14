@@ -14,7 +14,7 @@ from embodiedbench.planner.planner_utils import convert_format_2claude, convert_
                                              ActionPlan_1_manip, ActionPlan_manip, ActionPlan_lang_manip, fix_json
 
 temperature = 0
-max_completion_tokens = 2048
+max_completion_tokens = 4096
 remote_url = os.environ.get('remote_url')
 
 class RemoteModel:
@@ -209,7 +209,6 @@ class RemoteModel:
             **self._completion_token_kwargs()
         )
         out = response.choices[0].message.content
-
         return out
     
     def _call_qwen7b(self, message_history: list):
