@@ -15,7 +15,7 @@ import copy
 SUCCESS_THRESHOLD = 1
 
 ValidEvalSets = [
-    'base', 'common_sense', 'complex_instruction', 'visual_appearance', 'long_horizon'
+    'base', 'common_sense', 'complex_instruction', 'visual_appearance', 'long_horizon', 'base_custom'
 ]
 
 

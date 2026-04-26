@@ -42,7 +42,8 @@ class EB_HabitatEvaluator():
         
         
     def save_episode_metric(self, episode_info):
-        filename = 'episode_{}_final_res.json'.format(self.env._current_episode_num)
+        episode_idx = self.env._current_episode_num if not getattr(self.env, "selected_indexes", []) else self.env.selected_indexes[self.env._current_episode_num - 1] + 1
+        filename = 'episode_{}_final_res.json'.format(episode_idx)
         res_path = os.path.join(self.env.log_path, 'results')
         if not os.path.exists(res_path):
             os.makedirs(res_path)
@@ -62,7 +63,8 @@ class EB_HabitatEvaluator():
             logger.info(f'Current eval set: {eval_set}')
             exp_name = f"{self.model_name.split('/')[-1]}_{self.config['exp_name']}/{eval_set}" if len(self.config['exp_name']) else f"{self.model_name.split('/')[-1]}/{eval_set}"
             self.env = EBHabEnv(eval_set=self.eval_set, down_sample_ratio=self.config['down_sample_ratio'], exp_name=exp_name,
-                                             start_epi_index=self.config.get('start_epi_index', 0), resolution=self.config.get('resolution', 500))
+                                             start_epi_index=self.config.get('start_epi_index', 0), resolution=self.config.get('resolution', 500),
+                                             selected_indexes=self.config.get('selected_indexes', []))
 
             model_type = self.config.get('model_type', 'remote')
             self.planner = VLMPlanner(self.model_name, model_type, self.env.language_skill_set, self.system_prompt, examples, n_shot=self.config['n_shots'], obs_key='head_rgb',
@@ -80,7 +82,7 @@ class EB_HabitatEvaluator():
             logger.info(f"Evaluating episode {self.env._current_episode_num} ...")
             episode_info = {'reward': [], 'num_invalid_actions': 0, 'empty_plan': 0}
             obs = self.env.reset()
-            img_path = self.env.save_image(obs)
+            img_path = self.env.save_image(obs, extra_keys=['third_rgb'])
             user_instruction = self.env.episode_language_instruction
             print(f"Instruction: {user_instruction}")
 
@@ -135,7 +137,7 @@ class EB_HabitatEvaluator():
                             logger.debug(f"terminate: {done}\n")
                             
                             self.planner.update_info(info)
-                            img_path = self.env.save_image(obs)
+                            img_path = self.env.save_image(obs, extra_keys=['third_rgb'])
                             episode_info['reward'].append(reward)
                             episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
                             if done or info['last_action_success'] == 0:
@@ -150,7 +152,7 @@ class EB_HabitatEvaluator():
                         logger.debug(f"terminate: {done}\n")
                             
                         self.planner.update_info(info)
-                        img_path = self.env.save_image(obs)
+                        img_path = self.env.save_image(obs, extra_keys=['third_rgb'])
                         episode_info['reward'].append(reward)
                         episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
                 

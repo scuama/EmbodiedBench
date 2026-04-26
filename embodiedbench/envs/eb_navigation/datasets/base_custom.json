@@ -1,0 +1,25 @@
+{
+    "tasks": [
+        {
+            "targetObjectType": "Apple",
+            "targetObjectIds": "Apple|+00.32|+01.14|+01.51",
+            "target_position": {
+                "x": 0.32265257835388184,
+                "y": 1.14497971534729,
+                "z": 1.5086294412612915
+            },
+            "agentPose": {
+                "position": {
+                    "x": -0.19999992847442627,
+                    "y": 0.9009991884231567,
+                    "z": 0.9000000357627869
+                },
+                "rotation": 270.0,
+                "horizon": 0.0
+            },
+            "scene": "FloorPlan22",
+            "object_to_hide": [],
+            "instruction": "I am modifying this for testing! Navigate to the Apple immediately!"
+        }
+    ]
+}

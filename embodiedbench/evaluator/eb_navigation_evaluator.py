@@ -54,7 +54,8 @@ class EB_NavigationEvaluator():
 
             self.env = EBNavigationEnv(eval_set=self.eval_set, down_sample_ratio=self.config['down_sample_ratio'], 
                                    exp_name=exp_name, multiview=self.config['multiview'], boundingbox=self.config['detection_box'], 
-                                   multistep = self.config['multistep'], resolution = self.config['resolution'])
+                                   multistep = self.config['multistep'], resolution = self.config['resolution'],
+                                   selected_indexes=self.config.get('selected_indexes', []))
 
             self.planner = EBNavigationPlanner(model_name=self.model_name, model_type = self.config['model_type'], 
                                            actions = self.env.language_skill_set, system_prompt = system_prompt, 

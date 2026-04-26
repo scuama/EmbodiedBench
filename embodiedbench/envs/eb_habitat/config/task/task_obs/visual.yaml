@@ -9,13 +9,16 @@ habitat:
     obs_keys:
       # Visual sensors
       - head_rgb
-      # - third_rgb # remove for other tasks
+      - third_rgb
       - debug_info
   simulator:
     agents:
       main_agent:
         sim_sensors:
           head_rgb_sensor:
+            width: 500
+            height: 500
+          third_rgb_sensor:
             width: 500
             height: 500
         radius: 0.3

@@ -1,5 +1,8 @@
 import requests
-import torch
+try:
+    import torch
+except ImportError:
+    pass
 import os
 import io
 import requests

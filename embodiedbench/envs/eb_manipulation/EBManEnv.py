@@ -25,10 +25,11 @@ EVAL_SETS = {
     'common_sense': ['pick_cube_shape', 'stack_cubes_color', 'place_into_shape_sorter_color', 'wipe_table_direction'],
     'complex': ['pick_cube_shape', 'stack_cubes_color', 'place_into_shape_sorter_color', 'wipe_table_direction'],
     'spatial': ['pick_cube_relative', 'stack_cubes_relative', 'place_into_shape_sorter_relative', 'wipe_table_relative'],
-    'visual': ['pick_cube_shape', 'stack_cubes_color', 'place_into_shape_sorter_color']
+    'visual': ['pick_cube_shape', 'stack_cubes_color', 'place_into_shape_sorter_color'],
+    'custom': ['pick_cube_shape'],
 }
 
-ValidEvalSets = ['base', 'common_sense', 'complex', 'spatial', 'visual']
+ValidEvalSets = ['base', 'common_sense', 'complex', 'spatial', 'visual', 'custom']
 
 class EBManEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}

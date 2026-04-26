@@ -40,7 +40,8 @@ HABITAT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config/task/langu
 
 ValidEvalSets = [
         'base', 'common_sense', 'complex_instruction', 
-        'spatial_relationship', 'visual_appearance', 'long_horizon'
+        'spatial_relationship', 'visual_appearance', 'long_horizon',
+        'custom'
     ] 
 
 def add_receptacle(string, skill):
@@ -109,10 +110,11 @@ def transform_action_to_natural_language(skill_set):
 
 
 class EBHabEnv(gym.Env):
-    def __init__(self, eval_set='long_horizon', exp_name='', down_sample_ratio=1.0, start_epi_index=0, resolution=500, recording=False):
+    def __init__(self, eval_set='train', exp_name='', down_sample_ratio=1.0, start_epi_index=0, resolution=500, recording=False, selected_indexes=[]):
         """
         Initialize the HabitatRearrange environment.
         """
+        self.selected_indexes = selected_indexes
         # load config
         hydra.core.global_hydra.GlobalHydra.instance().clear()
         self.config = habitat.get_config(HABITAT_CONFIG_PATH)
@@ -127,6 +129,8 @@ class EBHabEnv(gym.Env):
 
         # modify config path to ease data loading
         self.dataset = make_dataset(self.config.habitat.dataset.type, config=self.config.habitat.dataset)
+        if len(self.selected_indexes) > 0:
+            self.dataset.episodes = [self.dataset.episodes[i] for i in self.selected_indexes]
 
         # initilaize env
         self.env = habitat.gym.make_gym_from_config(self.config, self.dataset)
@@ -136,7 +140,10 @@ class EBHabEnv(gym.Env):
 
         # Episode tracking
         self.down_sample_ratio = down_sample_ratio
-        self.number_of_episodes = self.env.number_of_episodes * down_sample_ratio
+        if len(self.selected_indexes) > 0:
+            self.number_of_episodes = len(self.selected_indexes)
+        else:
+            self.number_of_episodes = self.env.number_of_episodes * down_sample_ratio
         self._reset = False
         self._current_episode_num = 0 
         while start_epi_index >= 1 and self._current_episode_num < start_epi_index:
@@ -283,22 +290,46 @@ class EBHabEnv(gym.Env):
     def seed(self, seed=None):
         self.env.seed(seed)
 
-    def save_image(self, obs, key='head_rgb'):
-        """Save current agent observation as a PNG image."""
-        folder = self.log_path + '/images/episode_{}'.format(self._current_episode_num)
+    def save_image(self, obs, key='head_rgb', extra_keys=None):
+        """Save current agent observation as a PNG image.
+        Args:
+            obs: observation dict
+            key: primary image key to save
+            extra_keys: list of additional sensor keys to save (e.g. ['third_rgb'])
+        Returns:
+            str: path to the saved primary image
+        """
+        episode_idx = self._current_episode_num if not hasattr(self, 'selected_indexes') or not len(self.selected_indexes) else self.selected_indexes[self._current_episode_num - 1] + 1
+        folder = self.log_path + '/images/episode_{}'.format(episode_idx)
         if not os.path.exists(folder):
             os.makedirs(folder)
         img = Image.fromarray(observations_to_image(obs, key))
-        # time_stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-        image_path = os.path.join(folder, 'episode_{}_step_{}.png'.format(self._current_episode_num, self._current_step)) #, time_stamp))
+        image_path = os.path.join(folder, 'episode_{}_step_{}_{}.png'.format(episode_idx, self._current_step, key))
         img.save(image_path)
+        # Save extra views
+        if extra_keys:
+            for extra_key in extra_keys:
+                # Habitat Gym wrapper may rename keys (e.g. 'third_rgb' -> 'agent_0_third_rgb')
+                matched_key = None
+                if extra_key in obs:
+                    matched_key = extra_key
+                else:
+                    for obs_key in obs:
+                        if extra_key in obs_key and hasattr(obs[obs_key], 'shape') and len(obs[obs_key].shape) > 1:
+                            matched_key = obs_key
+                            break
+                if matched_key is not None:
+                    extra_img = Image.fromarray(observations_to_image(obs, matched_key))
+                    extra_path = os.path.join(folder, 'episode_{}_step_{}_{}.png'.format(episode_idx, self._current_step, extra_key))
+                    extra_img.save(extra_path)
         return image_path
 
     def save_episode_log(self):
         if not os.path.exists(self.log_path):
             os.makedirs(self.log_path)
+        episode_idx = self._current_episode_num if not hasattr(self, 'selected_indexes') or not len(self.selected_indexes) else self.selected_indexes[self._current_episode_num - 1] + 1
         # time_stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-        filename = 'episode_{}_step_{}.json'.format(self._current_episode_num, self._current_step) #, time_stamp)
+        filename = 'episode_{}_step_{}.json'.format(episode_idx, self._current_step) #, time_stamp)
         if len(self.episode_log):
             with open(os.path.join(self.log_path, filename), 'w', encoding='utf-8') as f:
                 for item in self.episode_log:

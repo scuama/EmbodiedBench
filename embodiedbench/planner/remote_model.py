@@ -6,8 +6,11 @@ import anthropic
 import google.generativeai as genai
 from openai import OpenAI
 import typing_extensions as typing
-import lmdeploy
-from lmdeploy import pipeline, GenerationConfig, PytorchEngineConfig
+try:
+    import lmdeploy
+    from lmdeploy import pipeline, GenerationConfig, PytorchEngineConfig
+except ImportError:
+    pass
 from embodiedbench.planner.planner_config.generation_guide import llm_generation_guide, vlm_generation_guide
 from embodiedbench.planner.planner_config.generation_guide_manip import llm_generation_guide_manip, vlm_generation_guide_manip
 from embodiedbench.planner.planner_utils import convert_format_2claude, convert_format_2gemini, ActionPlan_1, ActionPlan, ActionPlan_lang, \
