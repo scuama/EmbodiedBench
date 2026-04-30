@@ -16,6 +16,8 @@ class IntentReasoningAgent:
         self.task_validator = TaskValidator(self.llm, self.logger)
         
         self.global_intent = {}
+        self.action_history = []
+        self.current_location = "unknown starting location"
 
     def step(self, instruction: str, observation_text: str, skill_set: list, step_idx: int, img_path: str = None) -> int:
         """
@@ -35,60 +37,34 @@ class IntentReasoningAgent:
             
         # 2. 解空间更新
         self.solution_space.update_capabilities(skill_set)
-        self.solution_space.update_observation(observation_text, step_idx, img_path=img_path)
+        self.solution_space.update_observation(observation_text, self.current_location, step_idx, img_path=img_path)
         current_solution_space = self.solution_space.get_solution_space_dict()
         
-        # 3. 验证与拦截
+        # 3. 验证与决策 (Merged C & D)
         validation_result = self.task_validator.validate_action_feasibility(
             global_intent=self.global_intent,
             solution_space=current_solution_space,
+            action_history=self.action_history[-5:],  # 只传递最近5步历史避免过长
+            current_location=self.current_location,
             step=step_idx
         )
         
-        # 4. 决策输出
-        can_execute = validation_result.get("can_execute", False)
-        selected_target = validation_result.get("selected_target", None)
+        # 4. 提取动作并更新状态
+        action_id = validation_result.get("action_id", 0)
         
-        action_id = self._decide_action(current_solution_space["capabilities"], can_execute, selected_target, step_idx)
-        
-        self.logger.info(f"[Step {step_idx}] CoreAgent Final Decision: Action_ID {action_id} -> {current_solution_space['capabilities'][action_id] if action_id < len(current_solution_space['capabilities']) else 'UNKNOWN'}")
-        
-        return action_id
-
-    def _decide_action(self, capabilities: list, can_execute: bool, selected_target: str, step: int) -> int:
-        """
-        根据验证器的结果和 Capabilities 选择最终的 Action ID。
-        如果被拦截 (can_execute=False)，则强制选择“探索/导航”相关的动作。
-        如果放行，则优先选择与 selected_target 相关的动作（如 Pick / Place）。
-        这里使用大模型作为动态路由器。
-        """
-        system_prompt = "You are an action router. Select the BEST action_id (index) from the capabilities list."
-        user_prompt = f"""
-        Capabilities (Index: Action Name):
-        {json.dumps(list(enumerate(capabilities)), ensure_ascii=False)}
-        
-        Can Execute Target Task? {can_execute}
-        Selected Target Object (if any): {selected_target}
-        
-        Rules:
-        1. If Can Execute is True, find the action_id that interacts with or navigates to the Selected Target Object.
-        2. If Can Execute is False, we are in EXPLORATION mode. Pick a 'navigate' action to a new receptacle/area to expand our solution space. DO NOT pick 'pick' or 'place' or 'open'/'close' blindly.
-        3. Output a raw JSON exactly like: {{"action_id": <int>}}
-        """
-        
-        result_dict = self.llm.generate_json(system_prompt, user_prompt)
-        
-        try:
-            action_id = int(result_dict.get("action_id", 0))
-            if action_id >= len(capabilities) or action_id < 0:
-                action_id = 0 # Fallback
-        except Exception:
+        # 越界保护
+        if action_id >= len(current_solution_space["capabilities"]) or action_id < 0:
             action_id = 0
             
-        self.logger.log_module_output(
-            module_name="Core Decision Maker (Module D)",
-            step=step,
-            output_data=json.dumps({"input_can_execute": can_execute, "selected_target": selected_target, "output_action_id": action_id}, indent=2)
-        )
+        action_str = current_solution_space["capabilities"][action_id]
+        
+        # 若是导航动作，更新当前所处位置
+        if "nav" in action_str.lower():
+            loc = action_str.replace("navigate to the ", "").replace("navigate to ", "").strip()
+            self.current_location = loc
+            
+        self.action_history.append(action_str)
+        
+        self.logger.info(f"[Step {step_idx}] CoreAgent Final Decision: Action_ID {action_id} -> {action_str}")
         
         return action_id

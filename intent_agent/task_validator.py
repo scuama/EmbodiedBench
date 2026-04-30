@@ -8,15 +8,17 @@ class TaskValidator:
         self.llm = llm_client
         self.logger = logger
 
-    def validate_action_feasibility(self, global_intent: dict, solution_space: dict, step: int) -> dict:
+    def validate_action_feasibility(self, global_intent: dict, solution_space: dict, action_history: list, current_location: str, step: int) -> dict:
         """
-        预验证检查拦截器：比较目标意图和解空间，判断是否放行
+        核心决策器：比较目标意图、解空间与历史动作，直接输出下一步最佳 action_id
         """
         user_prompt = TASK_VALIDATOR_USER_PROMPT.format(
             global_intent=json.dumps(global_intent, ensure_ascii=False),
-            capabilities=json.dumps(solution_space["capabilities"], ensure_ascii=False),
+            capabilities=json.dumps(list(enumerate(solution_space["capabilities"])), ensure_ascii=False),
             visible_objects=json.dumps(solution_space["visible_objects"], ensure_ascii=False),
-            memory_objects=json.dumps(solution_space["memory_objects"], ensure_ascii=False)
+            memory_objects=json.dumps(solution_space["memory_objects"], ensure_ascii=False),
+            action_history=json.dumps(action_history, ensure_ascii=False),
+            current_location=current_location
         )
         
         result_dict = self.llm.generate_json(
@@ -25,18 +27,16 @@ class TaskValidator:
         )
         
         if not result_dict:
-            result_dict = {"can_execute": False, "reasoning": "LLM Error", "selected_target": None}
+            result_dict = {"action_id": 0, "reasoning": "LLM Error", "selected_target": None}
             
         # Log the decision
         self.logger.log_module_output(
-            module_name="TaskValidator (Module C)",
+            module_name="TaskValidator (Module C & D merged)",
             step=step,
             output_data=json.dumps(result_dict, indent=2, ensure_ascii=False)
         )
         
-        if not result_dict.get("can_execute", False):
-            self.logger.info(f"[Step {step}] TaskValidator INTERCEPTED: Intent unachievable with current solution space.")
-        else:
-            self.logger.info(f"[Step {step}] TaskValidator APPROVED: Moving forward with action.")
+        action_id = result_dict.get("action_id", 0)
+        self.logger.info(f"[Step {step}] TaskValidator selected Action ID: {action_id}")
             
         return result_dict

@@ -4,14 +4,22 @@ from datetime import datetime
 
 class AgentLogger:
     def __init__(self, episode_id=None):
-        self.episode_id = episode_id if episode_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.episode_id = episode_id if episode_id else run_timestamp
         self.log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
         os.makedirs(self.log_dir, exist_ok=True)
         
-        self.log_file = os.path.join(self.log_dir, f"episode_{self.episode_id}.log")
+        # 强制在文件名后缀加上时间戳，确保每次运行都是新文件
+        if episode_id:
+            filename = f"episode_{self.episode_id}_{run_timestamp}.log"
+        else:
+            filename = f"episode_{self.episode_id}.log"
+            
+        self.log_file = os.path.join(self.log_dir, filename)
         
         # Configure logging
-        self.logger = logging.getLogger(f"IntentAgent_{self.episode_id}")
+        # 使用 filename 作为 logger 的名字，防止在同一进程中多次实例化导致 Handler 冲突或重复追加
+        self.logger = logging.getLogger(f"IntentAgent_{filename}")
         self.logger.setLevel(logging.INFO)
         
         # File handler

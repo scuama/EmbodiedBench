@@ -8,7 +8,7 @@ class SolutionSpaceAnalyzer:
     def __init__(self, llm_client: LLMClient, logger: AgentLogger):
         self.llm = llm_client
         self.logger = logger
-        self.memory_objects = set()
+        self.memory_objects = {}
         self.current_visible_objects = []
         self.capabilities = []
 
@@ -17,7 +17,7 @@ class SolutionSpaceAnalyzer:
         # skill_set usually is a list of tuples like ('nav_to_tvstand', ...)
         self.capabilities = [str(skill) for skill in skill_set]
 
-    def update_observation(self, observation_text: str, step: int, img_path: str = None):
+    def update_observation(self, observation_text: str, current_location: str, step: int, img_path: str = None):
         """解析环境视觉与文本反馈，提取可视物体"""
         user_prompt = SOLUTION_SPACE_USER_PROMPT.format(observation_text=observation_text)
         
@@ -39,13 +39,13 @@ class SolutionSpaceAnalyzer:
         
         # 将新发现的物品加入全局记忆
         for obj in visible:
-            self.memory_objects.add(obj)
+            self.memory_objects[obj] = current_location
             
         # Log the output
         output_data = {
             "capabilities_count": len(self.capabilities),
             "currently_visible": self.current_visible_objects,
-            "memory_objects": list(self.memory_objects)
+            "memory_objects": self.memory_objects
         }
         
         self.logger.log_module_output(
@@ -58,5 +58,5 @@ class SolutionSpaceAnalyzer:
         return {
             "capabilities": self.capabilities,
             "visible_objects": self.current_visible_objects,
-            "memory_objects": list(self.memory_objects)
+            "memory_objects": self.memory_objects
         }
