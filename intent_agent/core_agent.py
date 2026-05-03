@@ -4,9 +4,10 @@ from .logger_utils import AgentLogger
 from .goal_reasoner import GoalReasoner
 from .solution_space import SolutionSpaceAnalyzer
 from .task_validator import TaskValidator
+from .memory_manager import MemoryManager
 
 class IntentReasoningAgent:
-    def __init__(self, episode_id=None, model_name="gpt-4o-mini"):
+    def __init__(self, episode_id=None, model_name="gpt-4o-mini", resume_feedback=None, scene_id=None):
         self.logger = AgentLogger(episode_id)
         self.llm = LLMClient(model_name=model_name)
         
@@ -14,10 +15,25 @@ class IntentReasoningAgent:
         self.goal_reasoner = GoalReasoner(self.llm, self.logger)
         self.solution_space = SolutionSpaceAnalyzer(self.llm, self.logger)
         self.task_validator = TaskValidator(self.llm, self.logger)
+        self.memory_manager = MemoryManager(self.llm, self.logger)
         
         self.global_intent = {}
         self.action_history = []
         self.current_location = "unknown starting location"
+        self.scene_id = scene_id if scene_id else (episode_id if episode_id else "unknown_scene")
+        
+        if resume_feedback:
+            session_state = self.memory_manager.load_session_state()
+            if session_state:
+                self.logger.info("[CoreAgent] Restoring session state from markdown...")
+                self.global_intent = session_state.get("global_intent", {})
+                self.action_history = session_state.get("action_history", [])
+                self.solution_space.memory_objects = session_state.get("known_objects", {})
+                
+                # process feedback to update global_intent and preferences
+                new_intent = self.memory_manager.process_feedback(resume_feedback)
+                if new_intent:
+                    self.global_intent = new_intent
 
     def step(self, instruction: str, observation_text: str, skill_set: list, step_idx: int, img_path: str = None, dual_img_path: str = None) -> dict:
         """
@@ -32,8 +48,8 @@ class IntentReasoningAgent:
         """
         self.logger.info(f"\n========== STARTING STEP {step_idx} ==========")
         
-        # 1. 目标提取 (仅在第一步执行)
-        if step_idx == 0:
+        # 1. 目标提取 (仅在第一步执行，且未被 resume 恢复时)
+        if step_idx == 0 and not self.global_intent:
             self.global_intent = self.goal_reasoner.extract_intent(instruction)
             
         # 2. 解空间更新
@@ -55,11 +71,23 @@ class IntentReasoningAgent:
             action_history=self.action_history,
             visited_locations=visited_locations,
             current_location=self.current_location,
-            step=step_idx
+            step=step_idx,
+            persistent_memory_text=self.memory_manager.read_memory()
         )
         
         if validation_result.get("communication_to_user"):
             self.logger.info(f"[Communication to User] {validation_result['communication_to_user']}")
+            
+            # 当决定跟用户对话时，保存断点上下文
+            self.memory_manager.save_session_state(
+                scene_id=self.scene_id,
+                global_intent=self.global_intent,
+                visited_locations=visited_locations,
+                known_objects=self.solution_space.memory_objects,
+                action_history=self.action_history,
+                last_agent_message=validation_result['communication_to_user']
+            )
+            validation_result["stop_and_save"] = True
         
         # 4. 提取动作并更新状态
         action_id = validation_result.get("action_id", 0)

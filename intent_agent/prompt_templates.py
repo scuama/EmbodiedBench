@@ -72,6 +72,7 @@ CRITICAL RULES TO AVOID ENDLESS LOOPS AND HANDLE FAILURES:
 6. NEVER choose a 'pick', 'place', or 'open'/'close' action for an object unless that object is CURRENTLY in the `Visible Objects` list.
 7. FALLBACK / ALTERNATIVE MODE (CRITICAL): You are STRICTLY FORBIDDEN from choosing an alternative object until you have explored ALL logical `Legal Locations`. ONLY when `Unvisited Locations` is EMPTY (meaning you explored the entire scene) and the original target is STILL missing, you MUST declare it missing and select an alternative target from Memory. You MUST evaluate ALL objects in Memory and choose the one that BEST matches the `acceptable_alternatives_properties` with the HIGHEST priority. You CANNOT choose any alternative object unless its EXACT NAME explicitly appears in the 'Memory' dictionary. Do NOT simply choose the closest item. If the best alternative is in a different location, you MUST navigate there. DO NOT REVISIT LOCATIONS TO DOUBLE CHECK.
 8. If you decide to pick an alternative target because the original is missing, you MUST populate the `communication_to_user` field with a polite, human-like explanation (e.g. "I explored the whole scene but couldn't find the screwdriver. However, I found a butter knife which can also turn the screw. Would you like me to grab it?"). Otherwise, leave it null.
+9. CATEGORY & PREFERENCE MATCHING: If the target intent is a broad category (e.g. 'fruit', 'drink'), you MUST check `Persistent Memory` for user preferences. Then, look at `Memory Objects` and use your common sense to match known items to that category (e.g. 'banana' belongs to 'fruit'). Prioritize the item that matches the user's preference. Do NOT blindly explore if a matching item is already in Memory.
 
 You must output ONLY a JSON object with:
 - "reasoning": (string) Step-by-step logical explanation for your decision, explicitly referencing the rules above.
@@ -99,5 +100,33 @@ Memory (Object -> Location mapping): {memory_objects}
 Action History (Recent actions taken):
 {action_history}
 
+Persistent Memory (Preferences & Session Context):
+{persistent_memory}
+
 Analyze the situation and output the best action_id.
+"""
+
+MEMORY_UPDATE_SYSTEM_PROMPT = """
+You are a Memory Manager for an Embodied AI Agent. 
+You will receive the current `persistent_memory.md` contents and a new `feedback_text` from the user.
+Your job is to:
+1. Update the 'Interaction History' to include the user's feedback.
+2. Determine if the user's feedback represents a transient intent (e.g., "I just want some fruit right now") or a long-term preference (e.g., "I always prefer bananas when hungry"). 
+   - CRITICAL RULE: Be CONSERVATIVE. Do NOT add long-term preferences unless the user explicitly expresses a strong, generalizable preference.
+3. Extract the new `global_intent` for the current task based on the feedback. The intent should follow the 5 Whys structure, focusing on the core functional need without specific objects, unless specifically requested.
+4. Output the FULL, modified Markdown string so we can overwrite the file.
+
+You must output ONLY a JSON object with:
+- "new_memory_markdown": (string) The complete updated markdown text.
+- "new_global_intent": (dict) A dictionary with 'deep_intent' and 'acceptable_alternatives_properties' representing the new goal.
+"""
+
+MEMORY_UPDATE_USER_PROMPT = """
+Current Memory Markdown:
+{current_memory}
+
+User Feedback:
+"{feedback_text}"
+
+Analyze and update the memory.
 """
