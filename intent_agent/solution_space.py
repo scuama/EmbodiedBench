@@ -13,13 +13,30 @@ class SolutionSpaceAnalyzer:
         self.capabilities = []
 
     def update_capabilities(self, skill_set: list):
-        """更新动作能力"""
-        # skill_set usually is a list of tuples like ('nav_to_tvstand', ...)
+        """更新动作能力并提取合法词汇表"""
         self.capabilities = [str(skill) for skill in skill_set]
+        self.legal_locations = []
+        self.legal_objects = []
+        for cap in self.capabilities:
+            cap_clean = cap.replace("navigate to the ", "nav_").replace("navigate to ", "nav_")
+            if cap_clean.startswith("nav_"):
+                loc = cap_clean[4:].strip()
+                if loc not in self.legal_locations:
+                    self.legal_locations.append(loc)
+            else:
+                for prefix in ["pick up the ", "open the ", "close the ", "interact with the "]:
+                    if cap.startswith(prefix):
+                        obj = cap[len(prefix):].strip()
+                        if obj not in self.legal_objects:
+                            self.legal_objects.append(obj)
+                        break
 
-    def update_observation(self, observation_text: str, current_location: str, step: int, img_path: str = None):
+    def update_observation(self, observation_text: str, current_location: str, step: int, img_path: str = None, dual_img_path: str = None):
         """解析环境视觉与文本反馈，提取可视物体"""
-        user_prompt = SOLUTION_SPACE_USER_PROMPT.format(observation_text=observation_text)
+        user_prompt = SOLUTION_SPACE_USER_PROMPT.format(
+            observation_text=observation_text,
+            legal_objects=json.dumps(getattr(self, "legal_objects", []), ensure_ascii=False)
+        )
         
         if img_path and os.path.exists(img_path):
             result_dict = self.llm.generate_vision_json(
@@ -51,12 +68,14 @@ class SolutionSpaceAnalyzer:
         self.logger.log_module_output(
             module_name="SolutionSpaceAnalyzer (Module B)",
             step=step,
-            output_data=json.dumps(output_data, indent=2, ensure_ascii=False)
+            output_data=json.dumps(output_data, indent=2, ensure_ascii=False),
+            img_path=dual_img_path if dual_img_path else img_path
         )
 
     def get_solution_space_dict(self):
         return {
             "capabilities": self.capabilities,
+            "legal_locations": getattr(self, "legal_locations", []),
             "visible_objects": self.current_visible_objects,
             "memory_objects": self.memory_objects
         }

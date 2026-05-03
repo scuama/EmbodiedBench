@@ -6,20 +6,25 @@ class AgentLogger:
     def __init__(self, episode_id=None):
         run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.episode_id = episode_id if episode_id else run_timestamp
-        self.log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-        os.makedirs(self.log_dir, exist_ok=True)
         
-        # 强制在文件名后缀加上时间戳，确保每次运行都是新文件
-        if episode_id:
-            filename = f"episode_{self.episode_id}_{run_timestamp}.log"
-        else:
-            filename = f"episode_{self.episode_id}.log"
-            
-        self.log_file = os.path.join(self.log_dir, filename)
+        base_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        self.run_dir = os.path.join(base_log_dir, f"run_{self.episode_id}_{run_timestamp}")
+        self.visuals_dir = os.path.join(self.run_dir, "visuals")
+        
+        os.makedirs(self.run_dir, exist_ok=True)
+        os.makedirs(self.visuals_dir, exist_ok=True)
+        
+        self.log_file = os.path.join(self.run_dir, "agent_decision.log")
+        self.run_summary_file = os.path.join(self.run_dir, "run_summary.md")
+        
+        # Initialize the markdown summary
+        with open(self.run_summary_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Intent Reasoning Agent Run Summary\n")
+            f.write(f"**Episode ID:** {self.episode_id}  \n")
+            f.write(f"**Timestamp:** {run_timestamp}  \n\n---\n\n")
         
         # Configure logging
-        # 使用 filename 作为 logger 的名字，防止在同一进程中多次实例化导致 Handler 冲突或重复追加
-        self.logger = logging.getLogger(f"IntentAgent_{filename}")
+        self.logger = logging.getLogger(f"IntentAgent_{self.episode_id}_{run_timestamp}")
         self.logger.setLevel(logging.INFO)
         
         # File handler
@@ -40,11 +45,91 @@ class AgentLogger:
             self.logger.addHandler(fh)
             self.logger.addHandler(ch)
 
-    def log_module_output(self, module_name: str, step: int, output_data: str):
-        """记录特定模块在特定步骤的核心输出"""
+    def save_step_image(self, original_img_path: str, step: int) -> str:
+        """将环境原始截图拷贝到本次运行专属的视觉目录，并返回新路径"""
+        if not original_img_path or not os.path.exists(original_img_path):
+            return None
+        import shutil
+        new_filename = f"step_{step:02d}_obs.png"
+        new_path = os.path.join(self.visuals_dir, new_filename)
+        shutil.copy(original_img_path, new_path)
+        return new_path
+
+    def save_obs_dual_view(self, obs, step: int) -> tuple:
+        """提取 head_rgb 和 third_rgb，拼接成一张包含双视角的图片"""
+        from embodiedbench.envs.eb_habitat.utils import observations_to_image
+        from PIL import Image, ImageDraw, ImageFont
+        import numpy as np
+
+        img_head = Image.fromarray(observations_to_image(obs, info={}, key="head_rgb"))
+        
+        # 尝试提取 third_rgb
+        third_key = None
+        for k in obs.keys():
+            if "third_rgb" in k and hasattr(obs[k], 'shape') and len(obs[k].shape) > 1:
+                third_key = k
+                break
+
+        if third_key:
+            img_third = Image.fromarray(observations_to_image(obs, info={}, key=third_key))
+            # Resize if height mismatch
+            if img_head.height != img_third.height:
+                img_third = img_third.resize((int(img_third.width * img_head.height / img_third.height), img_head.height))
+            
+            # Stitch horizontally
+            total_width = img_head.width + img_third.width
+            max_height = max(img_head.height, img_third.height)
+            merged_img = Image.new('RGB', (total_width, max_height))
+            merged_img.paste(img_head, (0, 0))
+            merged_img.paste(img_third, (img_head.width, 0))
+            
+            # Optional: Add text labels
+            try:
+                draw = ImageDraw.Draw(merged_img)
+                draw.text((10, 10), "First Person (head_rgb)", fill="red")
+                draw.text((img_head.width + 10, 10), "Third Person (third_rgb)", fill="red")
+            except Exception:
+                pass
+                
+            final_img = merged_img
+        else:
+            final_img = img_head
+
+        new_filename = f"step_{step:02d}_obs_dual.png"
+        new_path = os.path.join(self.visuals_dir, new_filename)
+        final_img.save(new_path)
+        
+        fpv_filename = f"step_{step:02d}_obs_fpv.png"
+        fpv_path = os.path.join(self.visuals_dir, fpv_filename)
+        img_head.save(fpv_path)
+        
+        return new_path, fpv_path
+
+    def log_ground_truth(self, gt_info: dict):
+        """将当前关卡的 Ground Truth (物品所在位置) 写入日志开头"""
+        import json
+        with open(self.run_summary_file, 'a', encoding='utf-8') as f:
+            f.write("### Ground Truth Locations\n\n")
+            f.write("```json\n")
+            f.write(json.dumps(gt_info, indent=2, ensure_ascii=False) + "\n")
+            f.write("```\n\n---\n\n")
+
+    def log_module_output(self, module_name: str, step: int, output_data: str, img_path: str = None):
+        """记录特定模块在特定步骤的核心输出，并同步写入 Markdown 连环画"""
         separator = "-" * 40
         log_message = f"\n{separator}\n[Step: {step}] [Module: {module_name}]\n{output_data}\n{separator}"
         self.logger.info(log_message)
+        
+        # Write to Markdown
+        with open(self.run_summary_file, 'a', encoding='utf-8') as f:
+            f.write(f"### Step {step} - {module_name}\n\n")
+            if img_path and os.path.exists(img_path):
+                # Calculate relative path for markdown embedding
+                rel_img_path = os.path.relpath(img_path, self.run_dir)
+                f.write(f"![Observation]({rel_img_path})\n\n")
+            f.write("```json\n")
+            f.write(f"{output_data}\n")
+            f.write("```\n\n---\n\n")
 
     def info(self, msg: str):
         self.logger.info(msg)

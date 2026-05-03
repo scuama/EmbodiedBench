@@ -8,17 +8,20 @@ class TaskValidator:
         self.llm = llm_client
         self.logger = logger
 
-    def validate_action_feasibility(self, global_intent: dict, solution_space: dict, action_history: list, current_location: str, step: int) -> dict:
+    def validate_action_feasibility(self, global_intent: dict, solution_space: dict, action_history: list, visited_locations: list, current_location: str, step: int) -> dict:
         """
         核心决策器：比较目标意图、解空间与历史动作，直接输出下一步最佳 action_id
         """
         user_prompt = TASK_VALIDATOR_USER_PROMPT.format(
             global_intent=json.dumps(global_intent, ensure_ascii=False),
+            current_location=current_location,
+            legal_locations=json.dumps(solution_space.get("legal_locations", []), ensure_ascii=False),
+            visited_locations=json.dumps(visited_locations, ensure_ascii=False),
+            unvisited_locations=json.dumps([loc for loc in solution_space.get("legal_locations", []) if loc not in visited_locations], ensure_ascii=False),
             capabilities=json.dumps(list(enumerate(solution_space["capabilities"])), ensure_ascii=False),
             visible_objects=json.dumps(solution_space["visible_objects"], ensure_ascii=False),
             memory_objects=json.dumps(solution_space["memory_objects"], ensure_ascii=False),
-            action_history=json.dumps(action_history, ensure_ascii=False),
-            current_location=current_location
+            action_history=json.dumps(action_history, ensure_ascii=False)
         )
         
         result_dict = self.llm.generate_json(
