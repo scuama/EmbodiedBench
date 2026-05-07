@@ -8,7 +8,20 @@ from .memory_manager import MemoryManager
 
 class IntentReasoningAgent:
     def __init__(self, episode_id=None, model_name="gpt-4o-mini", resume_feedback=None, scene_id=None):
-        self.logger = AgentLogger(episode_id)
+        import os
+        import re
+        log_dir = None
+        session_file = os.path.join(os.path.dirname(__file__), "session_context.md")
+        if resume_feedback and os.path.exists(session_file):
+            with open(session_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                log_dir_match = re.search(r'- \*\*log_dir\*\*: (.*)', content)
+                if log_dir_match:
+                    found_dir = log_dir_match.group(1).strip()
+                    if found_dir and found_dir != 'None':
+                        log_dir = found_dir
+
+        self.logger = AgentLogger(episode_id, log_dir=log_dir)
         self.llm = LLMClient(model_name=model_name)
         
         # Initialize Core Modules
@@ -20,20 +33,26 @@ class IntentReasoningAgent:
         self.global_intent = {}
         self.action_history = []
         self.current_location = "unknown starting location"
+        
         self.scene_id = scene_id if scene_id else (episode_id if episode_id else "unknown_scene")
+        session_state = self.memory_manager.load_session_state(fallback_scene_id=self.scene_id)
         
         if resume_feedback:
-            session_state = self.memory_manager.load_session_state()
             if session_state:
                 self.logger.info("[CoreAgent] Restoring session state from markdown...")
                 self.global_intent = session_state.get("global_intent", {})
                 self.action_history = session_state.get("action_history", [])
-                self.solution_space.memory_objects = session_state.get("known_objects", {})
                 
                 # process feedback to update global_intent and preferences
                 new_intent = self.memory_manager.process_feedback(resume_feedback)
                 if new_intent:
                     self.global_intent = new_intent
+                    
+        if session_state:
+            self.solution_space.memory_objects = session_state.get("known_objects", {})
+            self.visited_locations = session_state.get("visited_locations", [])
+        else:
+            self.visited_locations = []
 
     def step(self, instruction: str, observation_text: str, skill_set: list, step_idx: int, img_path: str = None, dual_img_path: str = None) -> dict:
         """
@@ -59,10 +78,11 @@ class IntentReasoningAgent:
         
         # 3. 验证与决策 (Merged C & D)
         # 提取 visited_locations
-        visited_locations = list(set([
+        new_visited = list(set([
             action.replace("navigate to the ", "").replace("navigate to ", "").strip() 
             for action in self.action_history if "nav" in action.lower()
         ]))
+        visited_locations = list(set(self.visited_locations + new_visited))
         self.logger.info(f"[Visited Locations] {visited_locations}")
         
         validation_result = self.task_validator.validate_action_feasibility(
@@ -72,7 +92,7 @@ class IntentReasoningAgent:
             visited_locations=visited_locations,
             current_location=self.current_location,
             step=step_idx,
-            persistent_memory_text=self.memory_manager.read_memory()
+            persistent_memory_text=self.memory_manager.get_full_memory_context()
         )
         
         if validation_result.get("communication_to_user"):
@@ -85,7 +105,8 @@ class IntentReasoningAgent:
                 visited_locations=visited_locations,
                 known_objects=self.solution_space.memory_objects,
                 action_history=self.action_history,
-                last_agent_message=validation_result['communication_to_user']
+                last_agent_message=validation_result['communication_to_user'],
+                log_dir=self.logger.run_dir
             )
             validation_result["stop_and_save"] = True
         

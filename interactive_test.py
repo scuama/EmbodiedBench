@@ -9,12 +9,15 @@ from embodiedbench.envs.eb_habitat.EBHabEnv import EBHabEnv
 
 def run_interactive_test():
     parser = argparse.ArgumentParser(description="Intent Agent Interactive Test")
+    parser.add_argument("--new_session", action="store_true", help="Start a new session, clearing short-term memory.")
     parser.add_argument("--instruction", type=str, help="Initial instruction to start a new session", default="")
+    parser.add_argument("--resume", action="store_true", help="Resume the existing session.")
     parser.add_argument("--feedback", type=str, help="User feedback to resume an existing session", default="")
+    parser.add_argument("--scene_id", type=str, help="Scene ID to load persistent knowledge", default="FloorPlan22")
     args = parser.parse_args()
 
-    if not args.instruction and not args.feedback:
-        print("Please provide either --instruction or --feedback.")
+    if not args.new_session and not args.resume:
+        print("Please provide either --new_session or --resume.")
         return
 
     print("\n" + "="*50)
@@ -24,27 +27,25 @@ def run_interactive_test():
     # Initialize environment
     env = EBHabEnv(eval_set='base', selected_indexes=[3])
     
-    # Initialize Agent with optional feedback
-    agent = IntentReasoningAgent(
-        episode_id="test_interactive", 
-        resume_feedback=args.feedback if args.feedback else None,
-        scene_id="FloorPlan22" # Mocking scene ID for persistent memory
-    )
-    
-    obs = env.reset()
-    
-    if args.instruction:
+    if args.new_session:
         print(f"[*] Starting NEW session with instruction: {args.instruction}")
         instruction = args.instruction
-        # Clean up existing session memory if it's a new instruction
-        memory_content = agent.memory_manager.read_memory()
-        if "## Current Session Context" in memory_content:
-            parts = memory_content.split("## Current Session Context")
-            agent.memory_manager.write_memory(parts[0].strip() + "\n\n## Current Session Context\n")
-            print("[*] Cleared previous session memory.")
+        agent = IntentReasoningAgent(
+            episode_id="test_interactive", 
+            scene_id=args.scene_id
+        )
+        # Clear existing session memory if it's a new session
+        agent.memory_manager.clear_session_context()
     else:
         print(f"[*] Resuming session with feedback: {args.feedback}")
         instruction = "RESUMED_SESSION" # Will be ignored by core_agent because global_intent is already loaded
+        agent = IntentReasoningAgent(
+            episode_id="test_interactive", 
+            resume_feedback=args.feedback if args.feedback else "Continue",
+            scene_id=args.scene_id
+        )
+        
+    obs = env.reset()
 
     step_idx = 0
     done = False
@@ -70,8 +71,8 @@ def run_interactive_test():
         if validation_result.get("stop_and_save"):
             print(f"\n[!] Agent Execution Paused.")
             print(f"[!] Agent Message: {validation_result.get('communication_to_user')}")
-            print("[!] Session state saved to persistent_memory.md")
-            print("[!] Exiting script. Run again with --feedback to resume.\n")
+            print("[!] Session state saved to session_context.md")
+            print("[!] Exiting script. Run again with --resume --feedback '...' to resume.\n")
             break
             
         action_id = validation_result.get("action_id", 0)

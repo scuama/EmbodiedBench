@@ -114,16 +114,19 @@ Your job is to:
 2. Determine if the user's feedback represents a transient intent (e.g., "I just want some fruit right now") or a long-term preference (e.g., "I always prefer bananas when hungry"). 
    - CRITICAL RULE: Be CONSERVATIVE. Do NOT add long-term preferences unless the user explicitly expresses a strong, generalizable preference.
 3. Extract the new `global_intent` for the current task based on the feedback. The intent should follow the 5 Whys structure, focusing on the core functional need without specific objects, unless specifically requested.
-4. Output the FULL, modified Markdown string so we can overwrite the file.
+4. Output the FULL, modified Persistent Memory Markdown string so we can overwrite the persistent_memory.md file. Do NOT include the Session Context in this output.
 
 You must output ONLY a JSON object with:
-- "new_memory_markdown": (string) The complete updated markdown text.
+- "new_memory_markdown": (string) The complete updated Persistent Memory markdown text.
 - "new_global_intent": (dict) A dictionary with 'deep_intent' and 'acceptable_alternatives_properties' representing the new goal.
 """
 
 MEMORY_UPDATE_USER_PROMPT = """
-Current Memory Markdown:
-{current_memory}
+Current Persistent Memory:
+{current_persistent}
+
+Current Session Context (Dialogue History):
+{current_session}
 
 User Feedback:
 "{feedback_text}"

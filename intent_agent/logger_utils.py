@@ -3,12 +3,16 @@ import logging
 from datetime import datetime
 
 class AgentLogger:
-    def __init__(self, episode_id=None):
+    def __init__(self, episode_id=None, log_dir=None):
         run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.episode_id = episode_id if episode_id else run_timestamp
         
-        base_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-        self.run_dir = os.path.join(base_log_dir, f"run_{self.episode_id}_{run_timestamp}")
+        if log_dir and os.path.exists(log_dir):
+            self.run_dir = log_dir
+        else:
+            base_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+            self.run_dir = os.path.join(base_log_dir, f"run_{self.episode_id}_{run_timestamp}")
+            
         self.visuals_dir = os.path.join(self.run_dir, "visuals")
         
         os.makedirs(self.run_dir, exist_ok=True)
@@ -17,11 +21,12 @@ class AgentLogger:
         self.log_file = os.path.join(self.run_dir, "agent_decision.log")
         self.run_summary_file = os.path.join(self.run_dir, "run_summary.md")
         
-        # Initialize the markdown summary
-        with open(self.run_summary_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Intent Reasoning Agent Run Summary\n")
-            f.write(f"**Episode ID:** {self.episode_id}  \n")
-            f.write(f"**Timestamp:** {run_timestamp}  \n\n---\n\n")
+        # Initialize the markdown summary only if it's a new log dir
+        if not (log_dir and os.path.exists(self.run_summary_file)):
+            with open(self.run_summary_file, 'w', encoding='utf-8') as f:
+                f.write(f"# Intent Reasoning Agent Run Summary\n")
+                f.write(f"**Episode ID:** {self.episode_id}  \n")
+                f.write(f"**Timestamp:** {run_timestamp}  \n\n---\n\n")
         
         # Configure logging
         self.logger = logging.getLogger(f"IntentAgent_{self.episode_id}_{run_timestamp}")

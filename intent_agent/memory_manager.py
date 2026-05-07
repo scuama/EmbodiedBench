@@ -5,35 +5,62 @@ from .logger_utils import AgentLogger
 from .prompt_templates import MEMORY_UPDATE_SYSTEM_PROMPT, MEMORY_UPDATE_USER_PROMPT
 
 class MemoryManager:
-    def __init__(self, llm_client: LLMClient, logger: AgentLogger, memory_file: str = "persistent_memory.md"):
+    def __init__(self, llm_client: LLMClient, logger: AgentLogger, 
+                 persistent_file: str = "persistent_memory.md",
+                 session_file: str = "session_context.md"):
         self.llm = llm_client
         self.logger = logger
-        self.memory_file = os.path.join(os.path.dirname(__file__), memory_file)
-        # 确保文件存在
-        if not os.path.exists(self.memory_file):
-            with open(self.memory_file, 'w', encoding='utf-8') as f:
-                f.write("# User Persistent Memory\n\n## Preferences\n- 用户在饥饿时明确表示过喜欢吃香蕉。\n\n## Interaction History\n\n## Current Session Context\n")
+        self.persistent_file = os.path.join(os.path.dirname(__file__), persistent_file)
+        self.session_file = os.path.join(os.path.dirname(__file__), session_file)
+        
+        # Ensure files exist
+        if not os.path.exists(self.persistent_file):
+            with open(self.persistent_file, 'w', encoding='utf-8') as f:
+                f.write("# User Persistent Memory\n\n## Preferences\n- 暂无偏好记录。\n\n## Scene Knowledge\n")
+                
+        if not os.path.exists(self.session_file):
+            self.clear_session_context()
 
-    def read_memory(self) -> str:
-        with open(self.memory_file, 'r', encoding='utf-8') as f:
+    def clear_session_context(self):
+        with open(self.session_file, 'w', encoding='utf-8') as f:
+            f.write("# Current Session Context\n\n## State\n- **scene_id**: None\n- **log_dir**: None\n- **global_intent**: {}\n- **action_history**: None\n\n## Dialogue History\n")
+
+    def read_persistent_memory(self) -> str:
+        with open(self.persistent_file, 'r', encoding='utf-8') as f:
             return f.read()
 
-    def write_memory(self, content: str):
-        with open(self.memory_file, 'w', encoding='utf-8') as f:
+    def write_persistent_memory(self, content: str):
+        with open(self.persistent_file, 'w', encoding='utf-8') as f:
             f.write(content)
 
+    def read_session_context(self) -> str:
+        if not os.path.exists(self.session_file): return ""
+        with open(self.session_file, 'r', encoding='utf-8') as f:
+            return f.read()
+
+    def write_session_context(self, content: str):
+        with open(self.session_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    def get_full_memory_context(self) -> str:
+        return f"=== Persistent Memory ===\n{self.read_persistent_memory()}\n\n=== Session Context ===\n{self.read_session_context()}"
+
+    def append_to_dialogue(self, text: str):
+        session_text = self.read_session_context()
+        if "## Dialogue History" not in session_text:
+            session_text += "\n## Dialogue History\n"
+        session_text += f"{text}\n"
+        self.write_session_context(session_text)
+
     def process_feedback(self, feedback_text: str) -> dict:
-        """
-        调用大模型解析用户反馈：
-        1. 决定是否更新长期偏好
-        2. 提取新的 global_intent
-        3. 重写持久化 MD 文件
-        返回更新后的 global_intent
-        """
-        current_memory = self.read_memory()
+        self.append_to_dialogue(f"- [User]: {feedback_text}")
+        
+        current_persistent = self.read_persistent_memory()
+        current_session = self.read_session_context()
         
         user_prompt = MEMORY_UPDATE_USER_PROMPT.format(
-            current_memory=current_memory,
+            current_persistent=current_persistent,
+            current_session=current_session,
             feedback_text=feedback_text
         )
         
@@ -48,90 +75,111 @@ class MemoryManager:
             new_memory_markdown = result_dict.get("new_memory_markdown", "")
             new_global_intent = result_dict.get("new_global_intent", {})
             if new_memory_markdown:
-                self.write_memory(new_memory_markdown)
+                self.write_persistent_memory(new_memory_markdown)
                 self.logger.info("[MemoryManager] Persistent memory updated.")
             return new_global_intent
         else:
             self.logger.error("[MemoryManager] Failed to process feedback.")
             return {}
 
-    def save_session_state(self, scene_id: str, global_intent: dict, visited_locations: list, known_objects: dict, action_history: list, last_agent_message: str):
-        """
-        将当前探索进度直接拼接到 Markdown 中并覆写保存
-        """
-        current_memory = self.read_memory()
+    def _update_scene_knowledge(self, scene_id: str, visited_locations: list, known_objects: dict):
+        persistent_text = self.read_persistent_memory()
         
-        # 提取 Preferences 和 Interaction History 部分，丢弃旧的 Session Context
-        # 使用正则表达式分割
-        parts = re.split(r'## Current Session Context', current_memory)
-        header_part = parts[0].strip()
+        scene_pattern = re.compile(rf'### {re.escape(scene_id)}\n(.*?)(?=\n### |\Z)', re.DOTALL)
         
-        session_markdown = f"""
-## Current Session Context
-- **scene_id**: {scene_id}
-- **global_intent**: {global_intent}
-- **visited_locations**: {', '.join(visited_locations) if visited_locations else 'None'}
-- **known_objects**:
-"""
+        v_loc_str = ', '.join(visited_locations) if visited_locations else 'None'
+        k_obj_str = ""
         if known_objects:
             for obj, loc in known_objects.items():
-                session_markdown += f"  - {loc}: {obj}\n"
+                k_obj_str += f"  - {loc}: {obj}\n"
         else:
-            session_markdown += "  - None\n"
+            k_obj_str = "  - None\n"
             
-        session_markdown += f"- **action_history**: {', '.join(action_history) if action_history else 'None'}\n"
+        new_scene_block = f"### {scene_id}\n- **visited_locations**: {v_loc_str}\n- **known_objects**:\n{k_obj_str}"
+        
+        if scene_pattern.search(persistent_text):
+            persistent_text = scene_pattern.sub(new_scene_block.replace('\\', '\\\\'), persistent_text, count=1)
+        else:
+            if "## Scene Knowledge" not in persistent_text:
+                persistent_text += "\n## Scene Knowledge\n"
+            persistent_text += f"\n{new_scene_block}\n"
+            
+        self.write_persistent_memory(persistent_text)
+
+    def save_session_state(self, scene_id: str, global_intent: dict, visited_locations: list, known_objects: dict, action_history: list, last_agent_message: str, log_dir: str):
+        if scene_id and scene_id != "unknown_scene":
+            self._update_scene_knowledge(scene_id, visited_locations, known_objects)
+        
+        session_text = self.read_session_context()
+        dialogue_part = ""
+        if "## Dialogue History" in session_text:
+            dialogue_part = session_text[session_text.find("## Dialogue History"):]
+        else:
+            dialogue_part = "## Dialogue History\n"
+            
         if last_agent_message:
-            session_markdown += f"- **Last Agent Message**: {last_agent_message}\n"
+            dialogue_part += f"- [Agent]: {last_agent_message}\n"
             
-        full_markdown = header_part + "\n\n" + session_markdown.strip() + "\n"
-        self.write_memory(full_markdown)
+        state_part = f"""# Current Session Context
+
+## State
+- **scene_id**: {scene_id}
+- **log_dir**: {log_dir}
+- **global_intent**: {global_intent}
+- **action_history**: {', '.join(action_history) if action_history else 'None'}
+
+"""
+        self.write_session_context(state_part + dialogue_part)
         self.logger.info("[MemoryManager] Session state saved to disk.")
 
-    def load_session_state(self) -> dict:
-        """
-        从 Markdown 文件中解析恢复 Session 状态
-        """
-        current_memory = self.read_memory()
-        parts = re.split(r'## Current Session Context', current_memory)
-        if len(parts) < 2:
-            return None
-            
-        session_part = parts[1]
+    def load_session_state(self, fallback_scene_id: str = None) -> dict:
+        session_text = self.read_session_context()
+        persistent_text = self.read_persistent_memory()
         
-        # 简单正则提取
-        scene_id_match = re.search(r'- \*\*scene_id\*\*: (.*)', session_part)
-        intent_match = re.search(r'- \*\*global_intent\*\*: (.*)', session_part)
-        visited_match = re.search(r'- \*\*visited_locations\*\*: (.*)', session_part)
+        scene_id_match = re.search(r'- \*\*scene_id\*\*: (.*)', session_text)
+        log_dir_match = re.search(r'- \*\*log_dir\*\*: (.*)', session_text)
+        intent_match = re.search(r'- \*\*global_intent\*\*: (.*)', session_text)
+        history_match = re.search(r'- \*\*action_history\*\*: (.*)', session_text)
         
-        # 提取 known_objects
-        known_objects = {}
-        obj_section_match = re.search(r'- \*\*known_objects\*\*:\n((?:  - .*\n?)*)', session_part)
-        if obj_section_match:
-            lines = obj_section_match.group(1).strip().split('\n')
-            for line in lines:
-                if ':' in line and 'None' not in line:
-                    loc, obj = line.strip().lstrip('- ').split(':', 1)
-                    known_objects[obj.strip()] = loc.strip()
-                    
-        # 提取 action history
-        history_match = re.search(r'- \*\*action_history\*\*: (.*)', session_part)
-
         scene_id = scene_id_match.group(1).strip() if scene_id_match else ""
+        if (not scene_id or scene_id == "None") and fallback_scene_id:
+            scene_id = fallback_scene_id
+        log_dir = log_dir_match.group(1).strip() if log_dir_match else ""
+        
         try:
-            # intent is stored as string representation of dict
             import ast
             global_intent = ast.literal_eval(intent_match.group(1).strip()) if intent_match else {}
         except:
             global_intent = {}
             
-        visited_str = visited_match.group(1).strip() if visited_match else ""
-        visited_locations = [x.strip() for x in visited_str.split(',')] if visited_str and visited_str != 'None' else []
-        
         history_str = history_match.group(1).strip() if history_match else ""
         action_history = [x.strip() for x in history_str.split(',')] if history_str and history_str != 'None' else []
-
+        
+        visited_locations = []
+        known_objects = {}
+        
+        if scene_id and scene_id != "unknown_scene" and scene_id != "None":
+            scene_pattern = re.compile(rf'### {re.escape(scene_id)}\n(.*?)(?=\n### |\Z)', re.DOTALL)
+            scene_match = scene_pattern.search(persistent_text)
+            if scene_match:
+                scene_block = scene_match.group(1)
+                v_loc_match = re.search(r'- \*\*visited_locations\*\*: (.*)', scene_block)
+                if v_loc_match:
+                    v_str = v_loc_match.group(1).strip()
+                    if v_str and v_str != 'None':
+                        visited_locations = [x.strip() for x in v_str.split(',')]
+                        
+                obj_match = re.search(r'- \*\*known_objects\*\*:\n((?:  - .*\n?)*)', scene_block)
+                if obj_match:
+                    lines = obj_match.group(1).strip().split('\n')
+                    for line in lines:
+                        if ':' in line and 'None' not in line:
+                            loc, obj = line.strip().lstrip('- ').split(':', 1)
+                            known_objects[obj.strip()] = loc.strip()
+                            
         return {
             "scene_id": scene_id,
+            "log_dir": log_dir,
             "global_intent": global_intent,
             "visited_locations": visited_locations,
             "known_objects": known_objects,
