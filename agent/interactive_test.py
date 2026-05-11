@@ -3,8 +3,8 @@ import os
 import time
 import argparse
 
-sys.path.append("/mnt/disk1/decom/EmbodiedBench")
-from intent_agent import IntentReasoningAgent
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agent.core_agent import IntentReasoningAgent
 from embodiedbench.envs.eb_habitat.EBHabEnv import EBHabEnv
 
 def run_interactive_test():

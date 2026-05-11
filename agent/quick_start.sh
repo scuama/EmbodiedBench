@@ -11,4 +11,4 @@ echo "指令: I am thirsty, bring me the apple from the TV stand to the sink."
 echo ""
 
 # 使用 xvfb-run 以 Headless 模式运行图形仿真引擎
-xvfb-run -a python quick_start_test.py
+xvfb-run -a python interactive_test.py --new_session --instruction "I am thirsty, bring me the apple from the TV stand to the sink."
